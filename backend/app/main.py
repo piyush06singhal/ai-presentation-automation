@@ -46,11 +46,8 @@ async def analyze_workbook_endpoint(file: UploadFile = File(...)):
         file_bytes = await file.read()
         logger.info(f"Ingesting workbook: {file.filename} ({len(file_bytes)} bytes)")
         
-        # 1. Ingest worksheets to dataframes
-        df_collection = ingest_workbook(file_bytes)
-        
-        # 2. Extract facts, KPIs, trends, and health report
-        summary = BusinessIntelligenceService.analyze_workbook(file_bytes, df_collection)
+        # 1. Extract facts, KPIs, trends, and health report from workbook
+        summary = BusinessIntelligenceService.analyze_workbook(file_bytes)
         return summary
     except Exception as e:
         logger.error(f"Error in analyze_workbook_endpoint: {str(e)}", exc_info=True)

@@ -2,7 +2,7 @@ import pandas as pd
 from typing import Dict, List
 from pptx.util import Inches, Pt
 from pptx.enum.text import PP_ALIGN
-from app.schemas.models import SlidePlan, BusinessSummary
+from app.schemas.models import SlidePlan, BusinessSummary, DataTypeEnum, DetectedKPI
 from app.services.theme_manager import CorporateTheme
 from app.services.layout_manager import LayoutManager
 from app.services.text_renderer import TextRenderer
@@ -34,7 +34,7 @@ class SlideFactory:
         elif template_id == "Agenda":
             SlideFactory._build_agenda_slide(slide, plan, summary)
         elif template_id == "KPI Dashboard":
-            SlideFactory._build_kpi_dashboard_slide(slide, plan, summary)
+            SlideFactory._build_kpi_dashboard_slide(slide, plan, summary, df_collection)
         elif template_id == "Trend Analysis" or template_id == "Category Comparison":
             SlideFactory._build_chart_slide(slide, plan, summary, df_collection)
         elif template_id == "Summary Table":
@@ -110,28 +110,55 @@ class SlideFactory:
         ContentRenderer.render_insights(slide, agenda_items, content_box)
 
     @staticmethod
-    def _build_kpi_dashboard_slide(slide, plan: SlidePlan, summary: BusinessSummary):
-        """Renders 4 KPI cards arranged in a 2x2 grid, with insight bullets underneath."""
-        # Split content zone: Top 60% for cards, bottom 40% for insights
-        parent_left, parent_top, parent_width, parent_height = LayoutManager.get_full_content_box()
+    def _draw_top_kpi_row(slide, summary: BusinessSummary):
+        """Draws a standardized row of 3 metric cards at the top of the content canvas."""
+        kpi_row_box = LayoutManager.get_composite_kpi_row_box()
+        display_kpis = list(summary.kpis)
         
-        grid_height = Inches(3.0)
-        grid_box = (parent_left, parent_top, parent_width, grid_height)
-        
-        # Get up to 4 KPIs
-        display_kpis = summary.kpis[:4]
-        if not display_kpis:
-            # Fallback to text summary
-            ContentRenderer.render_insights(slide, plan.insights, (parent_left, parent_top, parent_width, parent_height))
-            return
-            
-        cols = min(4, len(display_kpis))
-        cells = LayoutManager.get_grid_cells(rows=1, cols=cols, parent_box=grid_box)
-        
+        # If we have less than 3 KPIs, we generate default ones from the summary data
+        if len(display_kpis) < 3:
+            if not any(k.name == "Total Rows" or k.name.startswith("Total") for k in display_kpis):
+                display_kpis.append(DetectedKPI(
+                    name="Total Rows",
+                    value=float(sum(s.row_count for s in summary.metadata.sheets)),
+                    column="Row Count",
+                    worksheet="",
+                    confidence=1.0,
+                    description="Total recorded rows."
+                ))
+            if len(display_kpis) < 3 and not any(k.name == "Worksheets" for k in display_kpis):
+                display_kpis.append(DetectedKPI(
+                    name="Worksheets",
+                    value=float(len(summary.metadata.sheets)),
+                    column="Sheet Count",
+                    worksheet="",
+                    confidence=1.0,
+                    description="Number of parsed tabs."
+                ))
+            if len(display_kpis) < 3 and not any(k.name == "Health Rating" for k in display_kpis):
+                display_kpis.append(DetectedKPI(
+                    name="Health Rating",
+                    value=float(summary.health.overall_score),
+                    column="Health Score",
+                    worksheet="",
+                    confidence=1.0,
+                    unit="%",
+                    description="Workbook quality score."
+                ))
+                
+        display_kpis = display_kpis[:3]
+        cells = LayoutManager.get_grid_cells(rows=1, cols=3, parent_box=kpi_row_box)
         for idx, cell in enumerate(cells):
             kpi = display_kpis[idx]
-            val_str = f"{kpi.unit or ''}{kpi.value:,}" if kpi.unit != "%" else f"{kpi.value}%"
-            # Draw Card
+            if kpi.unit == "%":
+                val_str = f"{kpi.value}%"
+            elif kpi.unit == "$":
+                val_str = f"${kpi.value:,.0f}" if kpi.value.is_integer() else f"${kpi.value:,.2f}"
+            else:
+                val_str = f"{kpi.value:,.0f}" if kpi.value.is_integer() else f"{kpi.value:,.2f}"
+                if kpi.unit:
+                    val_str += f" {kpi.unit}"
+                    
             ShapeBuilder.draw_kpi_card(
                 slide=slide,
                 left=cell[0],
@@ -141,15 +168,47 @@ class SlideFactory:
                 metric_value=val_str,
                 metric_label=kpi.name
             )
+
+    @staticmethod
+    def _build_kpi_dashboard_slide(
+        slide,
+        plan: SlidePlan,
+        summary: BusinessSummary,
+        df_collection: Dict[str, pd.DataFrame]
+    ):
+        """Renders 3 KPI cards arranged at the top, and a full-width summary table at the bottom."""
+        # 1. Draw top KPI row
+        SlideFactory._draw_top_kpi_row(slide, summary)
+        
+        # 2. Draw bottom summary table
+        bottom_box = LayoutManager.get_composite_bottom_full_box()
+        df = df_collection.get(plan.worksheet)
+        if df is not None:
+            # Dynamically determine columns to display
+            numeric_cols = [c.name for c in summary.metadata.sheets[0].columns if c.datatype in [DataTypeEnum.NUMERIC, DataTypeEnum.PERCENTAGE, DataTypeEnum.CURRENCY]][:3]
+            categorical_cols = [c.name for c in summary.metadata.sheets[0].columns if c.datatype in [DataTypeEnum.CATEGORICAL, DataTypeEnum.IDENTIFIER]][:1]
             
-        # Insights bullet box placed in the remaining bottom space
-        insight_box = (
-            parent_left,
-            parent_top + grid_height + Inches(0.3),
-            parent_width,
-            parent_height - grid_height - Inches(0.3)
-        )
-        ContentRenderer.render_insights(slide, plan.insights, insight_box)
+            x_col = categorical_cols[0] if categorical_cols else df.columns[0]
+            y_cols = numeric_cols if numeric_cols else [df.columns[1]] if len(df.columns) > 1 else []
+            
+            try:
+                TableBuilder.draw_table(
+                    slide=slide,
+                    bounding_box=bottom_box,
+                    df=df,
+                    x_col=x_col,
+                    y_cols=y_cols
+                )
+            except Exception:
+                ShapeBuilder.draw_callout_box(
+                    slide=slide,
+                    bounding_box=bottom_box,
+                    text="Factual source data summary table could not be loaded into the visual grid.",
+                    border_color=CorporateTheme.WARNING
+                )
+        else:
+            # Fallback to insights list if no df exists
+            ContentRenderer.render_insights(slide, plan.insights, bottom_box)
 
     @staticmethod
     def _build_chart_slide(
@@ -158,8 +217,12 @@ class SlideFactory:
         summary: BusinessSummary,
         df_collection: Dict[str, pd.DataFrame]
     ):
-        """Assembles split column layouts: Left column draws chart, right column draws bullet lists."""
-        left_box, right_box = LayoutManager.get_split_layout_boxes()
+        """Assembles composite slide layouts: 3 KPI cards at top, split chart (left) and insights (right) at bottom."""
+        # 1. Draw top KPI row
+        SlideFactory._draw_top_kpi_row(slide, summary)
+        
+        # 2. Get composite bottom split zones
+        left_box, right_box = LayoutManager.get_composite_bottom_split_boxes()
         
         df = df_collection.get(plan.worksheet)
         chart_success = False
@@ -190,7 +253,6 @@ class SlideFactory:
                     y_cols=plan.y_axis
                 )
             except Exception:
-                # If table also fails, draw a callout warning
                 ShapeBuilder.draw_callout_box(
                     slide=slide,
                     bounding_box=left_box,
@@ -208,8 +270,12 @@ class SlideFactory:
         summary: BusinessSummary,
         df_collection: Dict[str, pd.DataFrame]
     ):
-        """Layout slide displaying a fullscreen data grid comparison list."""
-        left_box, right_box = LayoutManager.get_split_layout_boxes()
+        """Layout slide displaying a split data grid (left) and bullet insights (right) underneath 3 KPI cards."""
+        # 1. Draw top KPI row
+        SlideFactory._draw_top_kpi_row(slide, summary)
+        
+        # 2. Get composite split zones
+        left_box, right_box = LayoutManager.get_composite_bottom_split_boxes()
         df = df_collection.get(plan.worksheet)
         
         if df is not None and plan.x_axis and plan.y_axis:

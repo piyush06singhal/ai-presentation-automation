@@ -52,6 +52,43 @@ class LayoutManager:
         return left_box, right_box
 
     @staticmethod
+    def get_composite_kpi_row_box() -> Tuple[Inches, Inches, Inches, Inches]:
+        """Returns bounds for the top KPI row on composite slides."""
+        left = CorporateTheme.MARGIN_LEFT
+        top = Inches(1.4)
+        width = CorporateTheme.SLIDE_WIDTH - (CorporateTheme.MARGIN_LEFT + CorporateTheme.MARGIN_RIGHT)
+        height = Inches(1.2)
+        return left, top, width, height
+
+    @staticmethod
+    def get_composite_bottom_split_boxes() -> Tuple[Tuple[Inches, Inches, Inches, Inches], Tuple[Inches, Inches, Inches, Inches]]:
+        """Returns bottom split bounds for left visual (chart/table) and right insights block."""
+        top = Inches(2.9)
+        height = Inches(3.5)
+        
+        # Left column width ~60%
+        left_col_left = CorporateTheme.MARGIN_LEFT
+        left_col_width = Inches(7.5)
+        
+        # Right column width ~35%
+        right_col_left = left_col_left + left_col_width + CorporateTheme.GUTTER
+        right_col_width = CorporateTheme.SLIDE_WIDTH - right_col_left - CorporateTheme.MARGIN_RIGHT
+        
+        left_box = (left_col_left, top, left_col_width, height)
+        right_box = (right_col_left, top, right_col_width, height)
+        
+        return left_box, right_box
+
+    @staticmethod
+    def get_composite_bottom_full_box() -> Tuple[Inches, Inches, Inches, Inches]:
+        """Returns bottom full-width bounds for large data summaries."""
+        left = CorporateTheme.MARGIN_LEFT
+        top = Inches(2.9)
+        width = CorporateTheme.SLIDE_WIDTH - (CorporateTheme.MARGIN_LEFT + CorporateTheme.MARGIN_RIGHT)
+        height = Inches(3.5)
+        return left, top, width, height
+
+    @staticmethod
     def get_grid_cells(
         rows: int,
         cols: int,

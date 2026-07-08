@@ -1,5 +1,6 @@
 from pptx.util import Pt, Inches
 from pptx.enum.text import PP_ALIGN
+from pptx.enum.shapes import MSO_SHAPE
 from typing import List, Tuple, Optional
 from app.services.theme_manager import CorporateTheme
 from app.services.layout_manager import LayoutManager
@@ -61,7 +62,29 @@ class TextRenderer:
         """Renders insight bullet items, automatically scaling font size to avoid layout overflows."""
         left, top, width, height = bounding_box
         
-        tx_box = slide.shapes.add_textbox(left, top, width, height)
+        # Draw background container box for side panels (like Key Analytical Insights)
+        is_side_panel = list_title in ["Key Analytical Insights", "Operational Recommendations", "ANALYSIS & KEY INSIGHTS"]
+        
+        if is_side_panel:
+            # Draw rounded rectangle background shape
+            panel_shape = slide.shapes.add_shape(
+                MSO_SHAPE.ROUNDED_RECTANGLE, left, top, width, height
+            )
+            panel_shape.fill.solid()
+            panel_shape.fill.fore_color.rgb = CorporateTheme.BACKGROUND_LIGHT
+            panel_shape.line.color.rgb = CorporateTheme.LIGHT_GRAY
+            panel_shape.line.width = Pt(1)
+            
+            # Apply padding margin inset to the text box
+            padding = Inches(0.2)
+            left_box = left + padding
+            top_box = top + padding
+            width_box = width - (2 * padding)
+            height_box = height - (2 * padding)
+        else:
+            left_box, top_box, width_box, height_box = left, top, width, height
+            
+        tx_box = slide.shapes.add_textbox(left_box, top_box, width_box, height_box)
         tf = tx_box.text_frame
         tf.word_wrap = True
         tf.margin_left = tf.margin_top = tf.margin_right = tf.margin_bottom = 0

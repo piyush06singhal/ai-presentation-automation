@@ -22,6 +22,16 @@ def parse_and_validate_storyboard(raw_json_str: str) -> List[SlidePlan]:
     except json.JSONDecodeError as e:
         raise JSONParsingException(f"Failed to parse LLM response as JSON. Error: {str(e)}") from e
 
+    # Pre-process slide priority to clamp values to the schema-compliant [1, 3] range
+    if isinstance(data, dict) and "slides" in data and isinstance(data["slides"], list):
+        for slide in data["slides"]:
+            if isinstance(slide, dict) and "priority" in slide:
+                try:
+                    p = int(slide["priority"])
+                    slide["priority"] = max(1, min(3, p))
+                except (ValueError, TypeError):
+                    slide["priority"] = 2  # default fallback
+
     try:
         # Pydantic v2 validation
         storyboard = StoryboardLLMResponse.model_validate(data)

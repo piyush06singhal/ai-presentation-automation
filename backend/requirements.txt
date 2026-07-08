@@ -1,0 +1,9 @@
+fastapi
+pydantic>=2.0.0
+uvicorn
+pandas
+openpyxl
+numpy
+groq
+python-pptx
+pytest

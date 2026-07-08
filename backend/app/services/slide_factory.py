@@ -1,5 +1,6 @@
 import pandas as pd
-from typing import Dict, List
+import traceback
+from typing import Dict, List, Tuple, Optional
 from pptx.util import Inches, Pt
 from pptx.enum.text import PP_ALIGN
 from app.schemas.models import SlidePlan, BusinessSummary, DataTypeEnum, DetectedKPI
@@ -110,6 +111,55 @@ class SlideFactory:
         ContentRenderer.render_insights(slide, agenda_items, content_box)
 
     @staticmethod
+    def _resolve_columns(
+        df: pd.DataFrame,
+        worksheet: str,
+        summary: BusinessSummary,
+        plan_x: Optional[str] = None,
+        plan_y: Optional[List[str]] = None
+    ) -> Tuple[str, List[str]]:
+        """Resolves valid X and Y columns, falling back to sheet schema if plan columns are missing or invalid."""
+        # Find sheet metadata
+        sheet_meta = None
+        for s in summary.metadata.sheets:
+            if s.name == worksheet:
+                sheet_meta = s
+                break
+        if not sheet_meta and summary.metadata.sheets:
+            sheet_meta = summary.metadata.sheets[0]
+
+        # 1. Resolve X Column
+        x_col = None
+        if plan_x and plan_x in df.columns:
+            x_col = plan_x
+        elif sheet_meta:
+            # First categorical column
+            cat_cols = [c.name for c in sheet_meta.columns if c.datatype in [DataTypeEnum.CATEGORICAL, DataTypeEnum.IDENTIFIER] and c.name in df.columns]
+            if cat_cols:
+                x_col = cat_cols[0]
+        
+        if not x_col:
+            x_col = df.columns[0] if len(df.columns) > 0 else ""
+
+        # 2. Resolve Y Columns
+        y_cols = []
+        if plan_y:
+            y_cols = [y for y in plan_y if y in df.columns]
+            
+        if not y_cols and sheet_meta:
+            # All numeric columns
+            num_cols = [c.name for c in sheet_meta.columns if c.datatype in [DataTypeEnum.NUMERIC, DataTypeEnum.PERCENTAGE, DataTypeEnum.CURRENCY] and c.name in df.columns]
+            y_cols = num_cols[:3] # limit to 3
+
+        if not y_cols:
+            y_cols = [col for col in df.columns if col != x_col][:2]
+
+        # Prevent duplicate x_col in y_cols
+        y_cols = [y for y in y_cols if y != x_col]
+        
+        return x_col, y_cols
+
+    @staticmethod
     def _draw_top_kpi_row(slide, summary: BusinessSummary):
         """Draws a standardized row of 3 metric cards at the top of the content canvas."""
         kpi_row_box = LayoutManager.get_composite_kpi_row_box()
@@ -184,12 +234,8 @@ class SlideFactory:
         bottom_box = LayoutManager.get_composite_bottom_full_box()
         df = df_collection.get(plan.worksheet)
         if df is not None:
-            # Dynamically determine columns to display
-            numeric_cols = [c.name for c in summary.metadata.sheets[0].columns if c.datatype in [DataTypeEnum.NUMERIC, DataTypeEnum.PERCENTAGE, DataTypeEnum.CURRENCY]][:3]
-            categorical_cols = [c.name for c in summary.metadata.sheets[0].columns if c.datatype in [DataTypeEnum.CATEGORICAL, DataTypeEnum.IDENTIFIER]][:1]
-            
-            x_col = categorical_cols[0] if categorical_cols else df.columns[0]
-            y_cols = numeric_cols if numeric_cols else [df.columns[1]] if len(df.columns) > 1 else []
+            # Safe dynamic column resolution
+            x_col, y_cols = SlideFactory._resolve_columns(df, plan.worksheet, summary)
             
             try:
                 TableBuilder.draw_table(
@@ -200,6 +246,7 @@ class SlideFactory:
                     y_cols=y_cols
                 )
             except Exception:
+                traceback.print_exc()
                 ShapeBuilder.draw_callout_box(
                     slide=slide,
                     bounding_box=bottom_box,
@@ -227,38 +274,43 @@ class SlideFactory:
         df = df_collection.get(plan.worksheet)
         chart_success = False
         
-        # Attempt to render native chart
-        if df is not None and plan.chart_type and plan.x_axis and plan.y_axis:
-            try:
-                ChartBuilder.draw_chart(
-                    slide=slide,
-                    bounding_box=left_box,
-                    chart_type=plan.chart_type,
-                    df=df,
-                    x_col=plan.x_axis,
-                    y_cols=plan.y_axis
-                )
-                chart_success = True
-            except Exception:
-                chart_success = False
+        if df is not None:
+            x_col, y_cols = SlideFactory._resolve_columns(df, plan.worksheet, summary, plan.x_axis, plan.y_axis)
+            
+            # Attempt to render native chart
+            if plan.chart_type and plan.chart_type.lower() != "none" and y_cols:
+                try:
+                    ChartBuilder.draw_chart(
+                        slide=slide,
+                        bounding_box=left_box,
+                        chart_type=plan.chart_type,
+                        df=df,
+                        x_col=x_col,
+                        y_cols=y_cols
+                    )
+                    chart_success = True
+                except Exception:
+                    traceback.print_exc()
+                    chart_success = False
 
-        # Fallback to Summary Table if chart drawing fails or is set to None
-        if not chart_success and df is not None and plan.x_axis and plan.y_axis:
-            try:
-                TableBuilder.draw_table(
-                    slide=slide,
-                    bounding_box=left_box,
-                    df=df,
-                    x_col=plan.x_axis,
-                    y_cols=plan.y_axis
-                )
-            except Exception:
-                ShapeBuilder.draw_callout_box(
-                    slide=slide,
-                    bounding_box=left_box,
-                    text="Factual source data columns could not be loaded into visual shape grids.",
-                    border_color=CorporateTheme.WARNING
-                )
+            # Fallback to Summary Table if chart drawing fails or is set to None
+            if not chart_success and y_cols:
+                try:
+                    TableBuilder.draw_table(
+                        slide=slide,
+                        bounding_box=left_box,
+                        df=df,
+                        x_col=x_col,
+                        y_cols=y_cols
+                    )
+                except Exception:
+                    traceback.print_exc()
+                    ShapeBuilder.draw_callout_box(
+                        slide=slide,
+                        bounding_box=left_box,
+                        text="Factual source data columns could not be loaded into visual shape grids.",
+                        border_color=CorporateTheme.WARNING
+                    )
 
         # Draw bullet insights in the right column box
         ContentRenderer.render_insights(slide, plan.insights, right_box)
@@ -278,16 +330,18 @@ class SlideFactory:
         left_box, right_box = LayoutManager.get_composite_bottom_split_boxes()
         df = df_collection.get(plan.worksheet)
         
-        if df is not None and plan.x_axis and plan.y_axis:
+        if df is not None:
+            x_col, y_cols = SlideFactory._resolve_columns(df, plan.worksheet, summary, plan.x_axis, plan.y_axis)
             try:
                 TableBuilder.draw_table(
                     slide=slide,
                     bounding_box=left_box,
                     df=df,
-                    x_col=plan.x_axis,
-                    y_cols=plan.y_axis
+                    x_col=x_col,
+                    y_cols=y_cols
                 )
             except Exception:
+                traceback.print_exc()
                 ShapeBuilder.draw_callout_box(
                     slide=slide,
                     bounding_box=left_box,

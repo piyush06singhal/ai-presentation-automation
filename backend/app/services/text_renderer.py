@@ -111,12 +111,49 @@ class TextRenderer:
             
         for item in items:
             p = tf.add_paragraph() if p_idx > 0 else tf.paragraphs[0]
-            p.text = str(item).strip()
+            item_str = str(item).strip()
+            
             p.font.name = CorporateTheme.FONT_BODY
             p.font.size = Pt(font_size)
-            p.font.color.rgb = CorporateTheme.SECONDARY
             p.level = 0
             p.space_after = Pt(6)
-            # Add simple bullet formatting indicator
-            p.text = "•  " + p.text
+            
+            # Format bullet indicator
+            text_to_format = item_str
+            is_bold_prefix = False
+            prefix = ""
+            suffix = text_to_format
+            
+            if "**" in text_to_format:
+                parts = text_to_format.split("**", 2)
+                if len(parts) >= 3:
+                    prefix = parts[1]
+                    suffix = parts[2]
+                    is_bold_prefix = True
+            elif ":" in text_to_format:
+                parts = text_to_format.split(":", 1)
+                prefix = parts[0]
+                suffix = ":" + parts[1]
+                is_bold_prefix = True
+                
+            if is_bold_prefix:
+                # Add bold run for prefix label
+                r1 = p.add_run()
+                r1.text = "•  " + prefix.strip()
+                r1.font.bold = True
+                r1.font.name = CorporateTheme.FONT_BODY
+                r1.font.size = Pt(font_size)
+                r1.font.color.rgb = CorporateTheme.PRIMARY
+                
+                # Add normal run for remaining content
+                r2 = p.add_run()
+                r2.text = suffix
+                r2.font.bold = False
+                r2.font.name = CorporateTheme.FONT_BODY
+                r2.font.size = Pt(font_size)
+                r2.font.color.rgb = CorporateTheme.SECONDARY
+            else:
+                p.text = "•  " + text_to_format
+                p.font.color.rgb = CorporateTheme.SECONDARY
+                
             p_idx += 1

@@ -36,7 +36,7 @@ def validate_and_override_chart(
     # If the categories or dates exceed 15 unique items, it will cause layout issues in PPT. Force a Summary Table.
     if row_count > 15 or cardinality > 15:
         # Override to table
-        return None, None, None
+        return None, x_axis, valid_y_axis
 
     # Rule 2: Date Axis Trend Check
     # Date series must always render as a Line Chart.

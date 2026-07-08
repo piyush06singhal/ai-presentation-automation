@@ -127,4 +127,55 @@ def detect_kpis(sheet_name: str, df: pd.DataFrame, column_types: Dict[str, DataT
                 except Exception:
                     continue
                     
+    # If no KPIs were matched by keyword synonyms, but we have numeric or percentage columns,
+    # generate default KPIs to populate the presentation sheets.
+    if not detected_list:
+        for col_name in df.columns:
+            col_type = column_types.get(col_name, DataTypeEnum.UNKNOWN)
+            col_data = df[col_name].dropna()
+            if col_data.empty:
+                continue
+            
+            # Avoid mapping generic IDs, indexes, or unnamed columns
+            col_name_lower = col_name.lower()
+            if any(id_kw in col_name_lower for id_kw in ["id", "index", "unnamed"]):
+                continue
+
+            if col_type in [DataTypeEnum.NUMERIC, DataTypeEnum.PERCENTAGE, DataTypeEnum.CURRENCY]:
+                try:
+                    # Decide aggregate: percentage columns should use mean, count/days/amounts use sum/mean
+                    is_percentage = col_type == DataTypeEnum.PERCENTAGE or "progress" in col_name_lower or "%" in col_name_lower
+                    agg_type = "mean" if is_percentage else "sum"
+                    
+                    if agg_type == "sum":
+                        val = float(pd.to_numeric(col_data, errors='coerce').dropna().sum())
+                    else:
+                        val = float(pd.to_numeric(col_data, errors='coerce').dropna().mean())
+                    
+                    unit = "%" if is_percentage else None
+                    if col_type == DataTypeEnum.CURRENCY:
+                        unit = "$"
+
+                    # Description
+                    agg_label = "Average" if agg_type == "mean" else "Total"
+                    description = f"{agg_label} of {col_name} across the dataset."
+
+                    # Human readable KPI name
+                    kpi_name = f"{agg_label} {col_name}"
+                    
+                    detected_list.append(DetectedKPI(
+                        name=kpi_name,
+                        value=round(val, 2),
+                        column=col_name,
+                        worksheet=sheet_name,
+                        confidence=0.5,
+                        unit=unit,
+                        description=description
+                    ))
+                    # Cap at 4 fallback KPIs to prevent dashboard overflow
+                    if len(detected_list) >= 4:
+                        break
+                except Exception:
+                    continue
+
     return detected_list

@@ -41,12 +41,17 @@ class ChartBuilder:
         # Sort by dates if X is a date axis to preserve time progression
         if pd.api.types.is_datetime64_any_dtype(df[x_col]):
             df_sorted = df.sort_values(by=x_col)
+            if len(df_sorted) > 15:
+                df_sorted = df_sorted.head(15)
             # Format dates to short text (e.g. YYYY-MM-DD)
             categories = df_sorted[x_col].dt.strftime('%Y-%m-%d').tolist()
             df_source = df_sorted
         else:
-            categories = df[x_col].astype(str).tolist()
-            df_source = df
+            if len(df) > 15:
+                df_source = df.head(15)
+            else:
+                df_source = df
+            categories = df_source[x_col].astype(str).tolist()
 
         # 3. Compile Chart Data
         chart_data = CategoryChartData()

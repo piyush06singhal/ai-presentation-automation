@@ -16,7 +16,8 @@ def build_system_prompt() -> str:
         "1. Each slide must use a specific layout template ID (e.g., Title, Agenda, Executive Summary, KPI Dashboard, Trend Analysis, Category Comparison, Recommendations, Appendix).\n"
         "2. Make slide titles and business insights context-specific and adapted to the target audience's interests.\n"
         "3. Every slide must reference a single source worksheet from the workbook metadata.\n"
-        "4. Recommendations must be directly backed by the provided facts. If a fact indicates a metric decline, do not suggest growth.\n\n"
+        "4. Recommendations must be directly backed by the provided facts. If a fact indicates a metric decline, do not suggest growth.\n"
+        "5. Keep slide insights extremely concise and punchy (no long paragraphs). Every insight bullet item MUST start with a bold prefix label, e.g. '**Task Volatility**: High standard deviation in days required' or '**Department Share**: Marketing comprises 34% of active projects.' This is critical to ensure slides look visual rather than like a document.\n\n"
         "OUTPUT FORMATTING:\n"
         "You must return ONLY a valid JSON object matching the requested schema. No additional text, markdown containers, or explanations."
     )
@@ -77,9 +78,9 @@ def build_user_prompt(
                 "chart_type": "Line | Bar | Pie | Horizontal Bar | None (null if not using a chart)",
                 "x_axis": "column_name (null if no chart)",
                 "y_axis": ["column_name_1", "column_name_2 (null if no chart)"],
-                "insights": ["List of 2-3 insight sentences adapted to the audience"],
+                "insights": ["**Key Metric**: 2-3 concise insight bullets formatted exactly with a bold prefix label."],
                 "required_kpis": ["KPI_Name_1", "KPI_Name_2"],
-                "recommendations": ["List of action-oriented next steps (optional)"],
+                "recommendations": ["**Action Step**: Action-oriented recommendations formatted with a bold prefix label (optional)"],
                 "speaker_notes": "Detailed speech notes for the presenter",
                 "why_created": "Logical justification for creating this slide",
                 "priority": 1,

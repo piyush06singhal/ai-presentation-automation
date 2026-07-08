@@ -1,6 +1,7 @@
 from pptx.enum.shapes import MSO_SHAPE
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
+from pptx.enum.text import PP_ALIGN
 from typing import Tuple
 from app.services.theme_manager import CorporateTheme
 
@@ -39,6 +40,7 @@ class ShapeBuilder:
 
         # Large Metric Value
         p = tf.paragraphs[0]
+        p.alignment = PP_ALIGN.CENTER
         p.text = str(metric_value).strip()
         p.font.name = CorporateTheme.FONT_TITLE
         p.font.size = Pt(CorporateTheme.SIZE_KPI_VAL)
@@ -47,6 +49,7 @@ class ShapeBuilder:
 
         # Metric Label/Title below it
         p2 = tf.add_paragraph()
+        p2.alignment = PP_ALIGN.CENTER
         p2.text = str(metric_label).strip().upper()
         p2.font.name = CorporateTheme.FONT_BODY
         p2.font.size = Pt(CorporateTheme.SIZE_KPI_LABEL)

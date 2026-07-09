@@ -160,21 +160,62 @@ class SlideFactory:
         return x_col, y_cols
 
     @staticmethod
-    def _draw_top_kpi_row(slide, summary: BusinessSummary):
-        """Draws a standardized row of 3 metric cards at the top of the content canvas."""
+    def _draw_top_kpi_row(slide, summary: BusinessSummary, worksheet_name: str, df: Optional[pd.DataFrame] = None):
+        """Draws a standardized row of 3 metric cards at the top of the content canvas filtered by worksheet."""
         kpi_row_box = LayoutManager.get_composite_kpi_row_box()
-        display_kpis = list(summary.kpis)
         
-        # If we have less than 3 KPIs, we generate default ones from the summary data
+        # Filter KPIs specific to the current worksheet
+        display_kpis = [k for k in summary.kpis if k.worksheet == worksheet_name]
+        
+        # If we have less than 3 sheet-specific KPIs, dynamically compute fallback metrics from this sheet's df
+        if len(display_kpis) < 3 and df is not None:
+            # Dynamically scan numeric columns in df to aggregate
+            num_cols = df.select_dtypes(include=['number']).columns.tolist()
+            # Remove index columns like "Unnamed: 0"
+            num_cols = [c for c in num_cols if c != "Unnamed: 0"]
+            
+            for col in num_cols:
+                if len(display_kpis) >= 3:
+                    break
+                col_lower = str(col).lower()
+                # Skip columns already used in display_kpis
+                if any(k.column == col for k in display_kpis):
+                    continue
+                    
+                # Compute average or sum based on column type/name
+                col_data = df[col].dropna()
+                if not col_data.empty:
+                    if "id" in col_lower or "count" in col_lower or "total" in col_lower or "sum" in col_lower:
+                        val = float(col_data.sum())
+                        label = f"Total {col}"
+                    else:
+                        val = float(col_data.mean())
+                        label = f"Average {col}"
+                        
+                    unit = "%" if "%" in col_lower or "rate" in col_lower or "margin" in col_lower or "progress" in col_lower else ""
+                    if any(k in col_lower for k in ["price", "cost", "revenue", "sales", "spend", "profit"]):
+                        unit = "$"
+                        
+                    display_kpis.append(DetectedKPI(
+                        name=label,
+                        value=val,
+                        column=col,
+                        worksheet=worksheet_name,
+                        confidence=1.0,
+                        unit=unit,
+                        description=f"Computed metric for {col}."
+                    ))
+
+        # If still less than 3, fallback to generic workbook stats
         if len(display_kpis) < 3:
-            if not any(k.name == "Total Rows" or k.name.startswith("Total") for k in display_kpis):
+            if not any(k.name == "Total Rows" for k in display_kpis) and df is not None:
                 display_kpis.append(DetectedKPI(
                     name="Total Rows",
-                    value=float(sum(s.row_count for s in summary.metadata.sheets)),
+                    value=float(len(df)),
                     column="Row Count",
-                    worksheet="",
+                    worksheet=worksheet_name,
                     confidence=1.0,
-                    description="Total recorded rows."
+                    description="Total rows in worksheet."
                 ))
             if len(display_kpis) < 3 and not any(k.name == "Worksheets" for k in display_kpis):
                 display_kpis.append(DetectedKPI(
@@ -200,8 +241,13 @@ class SlideFactory:
         cells = LayoutManager.get_grid_cells(rows=1, cols=3, parent_box=kpi_row_box)
         for idx, cell in enumerate(cells):
             kpi = display_kpis[idx]
+            # Format value
             if kpi.unit == "%":
-                val_str = f"{kpi.value}%"
+                # If progress/rate is a ratio like 0.78, multiply by 100 for display
+                if kpi.value <= 1.0 and kpi.value > 0:
+                    val_str = f"{kpi.value * 100:.1f}%"
+                else:
+                    val_str = f"{kpi.value:.1f}%"
             elif kpi.unit == "$":
                 val_str = f"${kpi.value:,.0f}" if kpi.value.is_integer() else f"${kpi.value:,.2f}"
             else:
@@ -228,7 +274,8 @@ class SlideFactory:
     ):
         """Renders 3 KPI cards arranged at the top, and a full-width summary table at the bottom."""
         # 1. Draw top KPI row
-        SlideFactory._draw_top_kpi_row(slide, summary)
+        df = df_collection.get(plan.worksheet)
+        SlideFactory._draw_top_kpi_row(slide, summary, plan.worksheet, df)
         
         # 2. Draw bottom summary table
         bottom_box = LayoutManager.get_composite_bottom_full_box()
@@ -266,7 +313,8 @@ class SlideFactory:
     ):
         """Assembles composite slide layouts: 3 KPI cards at top, split chart (left) and insights (right) at bottom."""
         # 1. Draw top KPI row
-        SlideFactory._draw_top_kpi_row(slide, summary)
+        df = df_collection.get(plan.worksheet)
+        SlideFactory._draw_top_kpi_row(slide, summary, plan.worksheet, df)
         
         # 2. Get composite bottom split zones
         left_box, right_box = LayoutManager.get_composite_bottom_split_boxes()
@@ -324,7 +372,8 @@ class SlideFactory:
     ):
         """Layout slide displaying a split data grid (left) and bullet insights (right) underneath 3 KPI cards."""
         # 1. Draw top KPI row
-        SlideFactory._draw_top_kpi_row(slide, summary)
+        df = df_collection.get(plan.worksheet)
+        SlideFactory._draw_top_kpi_row(slide, summary, plan.worksheet, df)
         
         # 2. Get composite split zones
         left_box, right_box = LayoutManager.get_composite_bottom_split_boxes()

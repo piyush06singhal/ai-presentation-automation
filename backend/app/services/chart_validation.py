@@ -32,11 +32,14 @@ def validate_and_override_chart(
     if not valid_y_axis:
         return None, None, None
 
-    # Rule 1: High Density Data Check
-    # If the categories or dates exceed 15 unique items, it will cause layout issues in PPT. Force a Summary Table.
-    if row_count > 15 or cardinality > 15:
-        # Override to table
-        return None, x_axis, valid_y_axis
+    # Rule 1: High Density Category Check
+    # Only override to table if the categorical axis has too many unique values (cardinality > 15)
+    # or if we have a non-date axis with > 15 rows where unique count is unspecified.
+    # Date axes skip this to allow multi-point trend lines.
+    x_type = column_types.get(x_axis)
+    if x_type != DataTypeEnum.DATE:
+        if cardinality > 15 or (cardinality == 0 and row_count > 15):
+            return None, x_axis, valid_y_axis
 
     # Rule 2: Date Axis Trend Check
     # Date series must always render as a Line Chart.

@@ -64,7 +64,7 @@ class TableBuilder:
                     formatted_val = "-"
                 elif col_idx > 0 and isinstance(col_val, (int, float)):
                     # Format as metric currency or percentage
-                    col_name = df_slice.columns[col_idx].lower()
+                    col_name = str(df_slice.columns[col_idx]).lower()
                     if "margin" in col_name or "rate" in col_name or "%" in col_name or "growth" in col_name:
                         formatted_val = f"{col_val:.1%}" if col_val <= 1.0 else f"{col_val:.1f}%"
                     elif any(k in col_name for k in ["price", "cost", "revenue", "sales", "spend", "profit"]):
@@ -89,6 +89,6 @@ class TableBuilder:
                 cell.fill.fore_color.rgb = bg_color
 
         # 4. Set Column Widths evenly across parent width
-        col_width = width / num_cols
+        col_width = int(width / num_cols)
         for c in range(num_cols):
             table.columns[c].width = col_width

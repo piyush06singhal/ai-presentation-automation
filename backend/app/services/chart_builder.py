@@ -60,7 +60,7 @@ class ChartBuilder:
         for y_col in y_cols:
             # Safe fill empty/nan metrics
             series_values = pd.to_numeric(df_source[y_col], errors='coerce').fillna(0.0).tolist()
-            chart_data.add_series(y_col, tuple(series_values))
+            chart_data.add_series(str(y_col), tuple(series_values))
 
         # 4. Inject Shape
         chart_shape = slide.shapes.add_chart(
